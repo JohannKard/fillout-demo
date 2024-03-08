@@ -10,9 +10,8 @@ const LIMIT_DEFAULT = 150;
 
 app.get("/:formId/filteredResponses", async (req, res) => {
   const formId = req.params.formId;
-  const { filters, ...queryParams } = req.query;
-
-  console.log(queryParams);
+  const { filters, limit, ...queryParams } = req.query;
+  const parsedFilters = filters ? JSON.parse(filters) : [];
 
   try {
     const response = await axios.get(
@@ -26,46 +25,41 @@ app.get("/:formId/filteredResponses", async (req, res) => {
     );
 
     const filteredResponses = response.data.responses.filter((submission) => {
-      return filters
-        ? JSON.parse(filters).every((filter) => {
-            const question = submission.questions.find(
-              (q) => q.id === filter.id
-            );
-            if (!question) return false;
+      return parsedFilters?.every((filter) => {
+        if (submission.questions.findIndex((q) => q.id === filter.id) === -1)
+          return false;
 
-            switch (filter.condition) {
-              case "equals":
-                return question.value === filter.value.toString();
-              case "does_not_equal":
-                return question.value !== filter.value.toString();
-              case "greater_than":
-                const questionDate = new Date(questionValue);
-                const filterDate = new Date(filterValue);
-                return (
-                  !isNaN(questionDate) &&
-                  !isNaN(filterDate) &&
-                  questionDate > filterDate
-                );
-              case "less_than":
-                const questionDateLT = new Date(questionValue);
-                const filterDateLT = new Date(filterValue);
-                return (
-                  !isNaN(questionDateLT) &&
-                  !isNaN(filterDateLT) &&
-                  questionDateLT < filterDateLT
-                );
-              default:
-                return false;
-            }
-          })
-        : true;
+        const questionValue = isNaN(question.value)
+          ? question.value
+          : parseFloat(question.value);
+        const filterValue = isNaN(filter.value)
+          ? filter.value
+          : parseFloat(filter.value);
+
+        switch (filter.condition) {
+          case "equals":
+            return questionValue === filterValue;
+          case "does_not_equal":
+            return questionValue !== filterValue;
+          case "greater_than":
+            return isNaN(questionValue) || isNaN(filterValue)
+              ? new Date(questionValue) > new Date(filterValue)
+              : questionValue > filterValue;
+          case "less_than":
+            return isNaN(questionValue) || isNaN(filterValue)
+              ? new Date(questionValue) < new Date(filterValue)
+              : questionValue < filterValue;
+          default:
+            return false;
+        }
+      });
     });
 
     const pageCount =
       filteredResponses.length > 0
         ? Math.ceil(
-            queryParams.limit
-              ? filteredResponses.length / queryParams.limit
+            limit
+              ? filteredResponses.length / limit
               : filteredResponses.length / LIMIT_DEFAULT
           )
         : 0;
